@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Focus To-Do</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f4f0;
+      --surface: #fff;
+      --text: #1a1a1a;
+      --text-sub: #888;
+      --border: #ddd;
+      --empty: #aaa;
+    }
+    body.dark {
+      --bg: #111113;
+      --surface: #1e1e21;
+      --text: #f0f0f0;
+      --text-sub: #777;
+      --border: #333;
+      --empty: #555;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      color: var(--text);
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .app { max-width: 620px; margin: 0 auto; }
+
+    .header { text-align: center; margin-bottom: 1.5rem; position: relative; }
+    .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+    .header p { font-size: 13px; color: var(--text-sub); }
+
+    .dark-toggle {
+      position: absolute; right: 0; top: 0;
+      width: 38px; height: 22px;
+      background: var(--border);
+      border-radius: 11px; border: none; cursor: pointer;
+      display: flex; align-items: center; padding: 2px;
+      transition: background 0.3s;
+    }
+    .dark-toggle .knob {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; transition: transform 0.3s, background 0.3s;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.dark .dark-toggle { background: #7F77DD; }
+    body.dark .dark-toggle .knob { transform: translateX(16px); background: #fff; }
+
+    .stats {
+      background: rgba(127,119,221,0.1);
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .stats span { opacity: 0.85; }
+    .stats strong { font-size: 16px; color: #7F77DD; margin-left: 6px; }
+
+    .input-row { display: flex; gap: 8px; margin-bottom: 1.5rem; }
+    .input-row input { flex: 1; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.2s, background 0.3s, color 0.3s; }
+    .input-row input:focus { border-color: #B8A9F5; box-shadow: 0 0 0 3px rgba(184,169,245,0.2); }
+    .add-btn { padding: 11px 22px; border-radius: 10px; border: none; cursor: pointer; font-size: 15px; font-weight: 600; color: #fff; background: #7F77DD; transition: opacity 0.15s; white-space: nowrap; }
+    .add-btn:hover { opacity: 0.85; }
+
+    .todo-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .todo-card {
+      border-radius: 14px; padding: 13px 14px;
+      display: flex; align-items: center; gap: 10px;
+      transition: all 0.4s cubic-bezier(0.34,1.2,0.64,1), opacity 0.4s ease, filter 0.4s ease;
+      cursor: grab; user-select: none;
+    }
+    .todo-card:active { cursor: grabbing; }
+    .todo-card.dragging { opacity: 0.35; transform: scale(0.97); }
+    .todo-card.drag-over { outline: 2.5px dashed rgba(255,255,255,0.65); }
+    .todo-card.dimmed { opacity: 0.18; filter: saturate(0.3); pointer-events: none; }
+    .todo-card.done { opacity: 0.4; filter: saturate(0.5); }
+    .todo-card.done .todo-text { text-decoration: line-through; }
+    .todo-card.focused { padding: 24px 20px; gap: 16px; min-height: 160px; align-items: flex-start; position: relative; cursor: default; }
+
+    .check-btn {
+      width: 22px; height: 22px; min-width: 22px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.75); background: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
+      transition: background 0.2s;
+    }
+    .check-btn.checked { background: rgba(255,255,255,0.85); }
+    .checkmark { width: 11px; height: 11px; stroke: #333; stroke-width: 2.5; fill: none; opacity: 0; transition: opacity 0.2s; }
+    .check-btn.checked .checkmark { opacity: 1; }
+
+    .icon-btn {
+      width: 32px; height: 32px; min-width: 32px;
+      border-radius: 8px; background: rgba(255,255,255,0.25);
+      border: none; cursor: pointer; font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; padding: 0; transition: background 0.2s;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.45); }
+
+    .todo-text {
+      font-size: 18px; font-weight: 500; flex: 1;
+      word-break: break-word; line-height: 1.3;
+      transition: font-size 0.4s cubic-bezier(0.34,1.2,0.64,1);
+    }
+
+    .duration-select {
+      padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.25);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: inherit; font-size: 13px; font-weight: 500;
+      cursor: pointer; flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .duration-select:hover { background: rgba(255,255,255,0.45); }
+
+    .focus-btn {
+      width: 36px; height: 36px; min-width: 36px; border: none; border-radius: 50%;
+      background: rgba(255,255,255,0.35); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; padding: 0; transition: background 0.2s, transform 0.2s;
+    }
+    .focus-btn:hover { background: rgba(255,255,255,0.6); transform: scale(1.1); }
+    .focus-btn svg { width: 16px; height: 16px; display: block; }
+
+    .delete-btn {
+      width: 22px; height: 22px; border-radius: 50%; border: none;
+      background: rgba(255,255,255,0.3); cursor: pointer; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0.6; transition: opacity 0.2s; flex-shrink: 0; color: inherit;
+    }
+    .delete-btn:hover { opacity: 1; background: rgba(255,255,255,0.55); }
+
+    .timer-ctrl {
+      border: none; border-radius: 6px; padding: 6px 13px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      background: rgba(255,255,255,0.4); color: inherit; transition: background 0.2s; white-space: nowrap;
+    }
+    .timer-ctrl:hover { background: rgba(255,255,255,0.65); }
+
+    .preset-row { display: flex; justify-content: space-between; gap: 6px; }
+    .chip {
+      border: 1.5px solid rgba(255,255,255,0.5); border-radius: 20px;
+      padding: 3px 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+      background: transparent; color: inherit; transition: background 0.2s; flex: 1; text-align: center;
+    }
+    .chip:hover, .chip.active { background: rgba(255,255,255,0.45); border-color: rgba(255,255,255,0.9); }
+
+    .done-msg { font-size: 15px; font-weight: 500; text-align: center; background: rgba(255,255,255,0.35); border-radius: 8px; padding: 10px 12px; line-height: 1.6; }
+    .empty { text-align: center; padding: 2.5rem; color: var(--empty); font-size: 15px; }
+    #confetti-canvas { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:9999; }
+
+    /* Icon picker modal */
+    .icon-modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .icon-modal.open { display: flex; }
+    .icon-grid {
+      background: var(--surface); border-radius: 14px; padding: 20px;
+      max-width: 400px; width: 90vw; max-height: 70vh; overflow-y: auto;
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+    }
+    .icon-option {
+      width: 48px; height: 48px; border-radius: 10px;
+      background: rgba(127,119,221,0.1);
+      border: 2px solid transparent;
+      cursor: pointer; font-size: 24px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .icon-option:hover { background: rgba(127,119,221,0.2); transform: scale(1.1); }
+    .icon-option.selected { border-color: #7F77DD; background: rgba(127,119,221,0.3); }
+
+    /* Focused running layout */
+    .focused-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .focused-icon {
+      font-size: 32px;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .focused-title {
+      font-size: 40px;
+      font-weight: 500;
+      line-height: 1.2;
+      word-break: break-word;
+      flex: 1;
+    }
+    .focused-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body class="dark">
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- Icon Picker Modal -->
+  <div class="icon-modal" id="iconModal">
+    <div class="icon-grid" id="iconGrid"></div>
+  </div>
+
+  <div class="app">
+    <div class="header">
+      <h1>Focus To-Do</h1>
+      <p>点击 ▶ 专注当前任务 · 拖动卡片调整顺序</p>
+      <button class="dark-toggle" onclick="toggleDark()" title="切换深色/浅色模式">
+        <div class="knob" id="darkKnob">🌙</div>
+      </button>
+    </div>
+
+    <div class="stats">
+      <span>总计时间</span>
+      <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+        <strong id="totalTime">0 分钟</strong>
+        <span style="color:var(--border); font-weight:300; font-size:18px;">|</span>
+        <strong id="totalTimeHM" style="font-size:14px; color:#9D96E8;">0 分钟</strong>
+      </div>
+    </div>
+
+    <div class="input-row">
+      <input type="text" id="taskInput" placeholder="输入任务..." maxlength="120" />
+      <button class="add-btn" onclick="addTask()">+ 添加</button>
+    </div>
+    <div class="todo-list" id="todoList"></div>
+  </div>
+
+  <script>
+    const ICONS = [
+      '📝','✏️','📚','💼','🎯','📊','📈','🗓️','⏰','🔔','💡','🔍','📌','🎓','📖','🔬','💻','⚙️','🔧','🛠️',
+      '✉️','📞','💬','🎁','🤝','👋','💝','🎉','🎈',
+      '☕','🍵','🥗','🍎','💧',
+      '🏃','🧘','🏋️','🚴','🏀','⚽','🎮',
+      '🧠','❤️','🌱','🌞','🌙','⭐',
+      '🧹','🧺','🛒','🧾','🏠',
+      '🎵','🎨','🎬','📷','🎤'
+    ];
+    const PALETTES = [
+      { bg: '#B8A9F5', text: '#2D1F6E' },
+      { bg: '#F9A8C9', text: '#5C1533' },
+      { bg: '#6DD5C0', text: '#04342C' },
+      { bg: '#F7C06B', text: '#4A2A00' },
+      { bg: '#74C0F5', text: '#032D55' },
+      { bg: '#A8D96B', text: '#1E3D04' },
+      { bg: '#F4856A', text: '#4A1B0C' },
+      { bg: '#C9A8F5', text: '#3A1A6E' },
+      { bg: '#F5A8A8', text: '#5C1515' },
+      { bg: '#68D4A0', text: '#053D22' },
+    ];
+    const DURATIONS = [5, 15, 25, 40, 60];
+
+    let isDark = true;
+    function toggleDark() {
+      isDark = !isDark;
+      document.body.classList.toggle('dark', isDark);
+      document.getElementById('darkKnob').textContent = isDark ? '🌙' : '☀️';
+    }
+
+    let colorIndex = 0, tasks = [], focusedId = null, dragSrcId = null;
+    let timerInterval = null, timerRunning = false, timerPaused = false, timerDone = false;
+    let timerRemaining = 25 * 60, customMinutes = 25;
+    let timerStartedAt = null, timerBaseRemaining = 0;
+    let breakInterval = null, breakRunning = false, breakRemaining = 0, breakDone = false;
+    let currentIconPickerTaskId = null;
+
+    function updateStats() {
+      const total = tasks.reduce((sum, t) => sum + (t.duration || 25), 0);
+      const h = Math.floor(total / 60), m = total % 60;
+      const hm = h > 0 ? `${h} 小时 ${m > 0 ? m + ' 分钟' : ''}` : `${m} 分钟`;
+      document.getElementById('totalTime').textContent = `${total} 分钟`;
+      document.getElementById('totalTimeHM').textContent = hm;
+    }
+
+    function addTask() {
+      const input = document.getElementById('taskInput');
+      const text = input.value.trim();
+      if (!text) { input.focus(); return; }
+      tasks.push({
+        id: Date.now(),
+        text,
+        color: PALETTES[colorIndex++ % PALETTES.length],
+        done: false,
+        icon: '📝',
+        duration: 25
+      });
+      input.value = ''; input.focus(); render(); updateStats();
+    }
+
+    function openIconPicker(taskId) {
+      currentIconPickerTaskId = taskId;
+      const task = tasks.find(t => t.id === taskId);
+      const grid = document.getElementById('iconGrid');
+      grid.innerHTML = ICONS.map(icon =>
+        `<div class="icon-option ${task.icon === icon ? 'selected' : ''}" onclick="selectIcon('${icon}')">${icon}</div>`
+      ).join('');
+      document.getElementById('iconModal').classList.add('open');
+    }
+
+    window.selectIcon = function(icon) {
+      const task = tasks.find(t => t.id === currentIconPickerTaskId);
+      if (task) { task.icon = icon; render(); }
+      document.getElementById('iconModal').classList.remove('open');
+    };
+
+    document.getElementById('iconModal').addEventListener('click', e => {
+      if (e.target.id === 'iconModal') document.getElementById('iconModal').classList.remove('open');
+    });
+
+    function changeDuration(taskId, minutes) {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) { task.duration = minutes; updateStats(); }
+    }
+
+    function updateTabTitle() {
+      if (timerRunning || timerPaused) {
+        const m = minsLeft();
+        document.title = `${m}分`;
+      } else if (breakRunning) {
+        const m = Math.floor(breakRemaining / 60);
+        document.title = `${m}分`;
+      } else {
+        document.title = 'Focus To-Do';
+      }
+    }
+
+    function calcRemaining() {
+      if (!timerRunning) return timerRemaining;
+      const elapsed = Math.floor((Date.now() - timerStartedAt) / 1000);
+      return Math.max(0, timerBaseRemaining - elapsed);
+    }
+
+    function minsLeft() { return Math.ceil(calcRemaining() / 60); }
+
+    function startTimer() {
+      if (timerRunning || timerDone) return;
+      timerStartedAt = Date.now();
+      timerBaseRemaining = timerRemaining;
+      timerRunning = true;
+      render(); updateTabTitle();
+      timerInterval = setInterval(timerTick, 1000);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    function timerTick() {
+      const rem = calcRemaining();
+      if (rem <= 0) {
+        clearInterval(timerInterval); timerInterval = null;
+        document.removeEventListener('visibilitychange', onVisibility);
+        timerRemaining = 0;
+        timerRunning = false; timerDone = true;
+        document.title = 'Focus To-Do';
+        render();
+      } else {
+        const el = document.getElementById('td-display');
+        if (el) el.textContent = `${minsLeft()}`;
+        updateTabTitle();
+      }
+    }
+
+    function onVisibility() {
+      if (!document.hidden && timerRunning) timerTick();
+    }
+
+    function pauseTimer() {
+      timerRemaining = calcRemaining();
+      clearInterval(timerInterval); timerInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false; timerPaused = true; updateTabTitle(); render();
+    }
+
+    function resumeTimer() {
+      if (timerRunning || timerDone) return;
+      timerPaused = false;
+      timerStartedAt = Date.now();
+      timerBaseRemaining = timerRemaining;
+      timerRunning = true;
+      render(); updateTabTitle();
+      timerInterval = setInterval(timerTick, 1000);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    function addTime(mins) {
+      timerRemaining = calcRemaining() + mins * 60;
+      if (timerRunning) {
+        timerBaseRemaining = timerRemaining;
+        timerStartedAt = Date.now();
+      }
+      timerTick(); updateTabTitle();
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval); timerInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false; timerDone = false; timerPaused = false;
+      timerRemaining = customMinutes * 60;
+      document.title = 'Focus To-Do';
+      render();
+    }
+
+    function setPreset(min) {
+      customMinutes = min;
+      clearInterval(timerInterval); timerInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false; timerDone = false; timerPaused = false;
+      timerRemaining = min * 60;
+      render();
+    }
+
+    function stepMinutes(delta) {
+      customMinutes = Math.min(120, Math.max(5, customMinutes + delta));
+      clearInterval(timerInterval); timerInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false; timerDone = false; timerPaused = false;
+      timerRemaining = customMinutes * 60;
+      render();
+    }
+
+    function startBreak() {
+      clearInterval(timerInterval); timerInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false;
+      breakRemaining = 5 * 60;
+      breakRunning = true; breakDone = false;
+      updateTabTitle();
+      render();
+      breakInterval = setInterval(() => {
+        breakRemaining--;
+        const el = document.getElementById('break-display');
+        if (el) {
+          const m = Math.floor(breakRemaining / 60); const s = breakRemaining % 60;
+          el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+        }
+        updateTabTitle();
+        if (breakRemaining <= 0) {
+          clearInterval(breakInterval); breakInterval = null;
+          breakRunning = false; breakDone = true;
+          document.title = 'Focus To-Do';
+          playBreakEndSound();
+          render();
+        }
+      }, 1000);
+    }
+
+    function stopBreak() {
+      clearInterval(breakInterval); breakInterval = null;
+      breakRunning = false; breakDone = false;
+      // Resume the focus timer from where it was
+      timerStartedAt = Date.now();
+      timerBaseRemaining = timerRemaining;
+      timerRunning = true;
+      timerPaused = false;
+      updateTabTitle();
+      timerInterval = setInterval(timerTick, 1000);
+      document.addEventListener('visibilitychange', onVisibility);
+      render();
+    }
+
+    function playBreakEndSound() {
+      try {
+        const ac = new (window.AudioContext || window.webkitAudioContext)();
+        function tone(freq, start, dur, type='sine', vol=0.2, detune=0) {
+          const osc = ac.createOscillator();
+          const gain = ac.createGain();
+          osc.connect(gain); gain.connect(ac.destination);
+          osc.type = type; osc.frequency.value = freq; osc.detune.value = detune;
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(vol, start + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+          osc.start(start); osc.stop(start + dur);
+        }
+        const t = ac.currentTime;
+        const scale = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98];
+        scale.forEach((f, i) => {
+          const st = t + i * 0.09;
+          tone(f, st, 0.45, 'sine', 0.2);
+          tone(f * 2, st, 0.3, 'sine', 0.06);
+          tone(f, st + 0.01, 0.35, 'triangle', 0.08);
+        });
+        const bell = t + scale.length * 0.09 + 0.05;
+        tone(1567.98, bell, 1.5, 'sine', 0.28);
+        tone(1567.98, bell, 1.3, 'triangle', 0.12, 7);
+        tone(3135.96, bell, 1.0, 'sine', 0.08);
+        tone(1046.5, bell, 1.4, 'sine', 0.12);
+      } catch(e) {}
+    }
+
+    function launchConfetti(originX, originY) {
+      const canvas = document.getElementById('confetti-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      const colors = ['#FFD700','#FF6B6B','#B8A9F5','#6DD5C0','#F9A8C9','#74C0F5','#A8D96B','#FF9F43','#fff','#F7C06B'];
+      const cx = originX ?? canvas.width / 2;
+      const cy = originY ?? canvas.height / 2;
+
+      const pieces = Array.from({length: 80}, (_, i) => {
+        const angle = (Math.PI * 2 / 80) * i + (Math.random() - 0.5) * 0.4;
+        const speed = Math.random() * 12 + 5;
+        return {
+          x: cx, y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - Math.random() * 6,
+          r: Math.random() * 6 + 3,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          gravity: 0.35 + Math.random() * 0.2,
+          drag: 0.92,
+          tilt: Math.random() * Math.PI * 2,
+          tiltSpeed: (Math.random() - 0.5) * 0.2,
+          shape: ['circle','rect','star'][Math.floor(Math.random()*3)],
+          alpha: 1,
+        };
+      });
+
+      let frame; let elapsed = 0;
+      function drawStar(ctx, x, y, r, color, alpha) {
+        ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+        ctx.translate(x, y); ctx.rotate(elapsed * 0.05);
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          ctx.lineTo(Math.cos((18 + 72*i)*Math.PI/180)*r, -Math.sin((18+72*i)*Math.PI/180)*r);
+          ctx.lineTo(Math.cos((54 + 72*i)*Math.PI/180)*(r/2.5), -Math.sin((54+72*i)*Math.PI/180)*(r/2.5));
+        }
+        ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        pieces.forEach(p => {
+          p.vx *= p.drag; p.vy *= p.drag;
+          p.vy += p.gravity;
+          p.x += p.vx; p.y += p.vy;
+          p.tilt += p.tiltSpeed;
+          p.alpha = Math.max(0, p.alpha - 0.012);
+          if (p.shape === 'star') {
+            drawStar(ctx, p.x, p.y, p.r, p.color, p.alpha);
+          } else {
+            ctx.save(); ctx.globalAlpha = p.alpha; ctx.fillStyle = p.color;
+            ctx.translate(p.x, p.y); ctx.rotate(p.tilt);
+            if (p.shape === 'circle') {
+              ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI*2); ctx.fill();
+            } else {
+              ctx.fillRect(-p.r, -p.r*0.5, p.r*2, p.r);
+            }
+            ctx.restore();
+          }
+        });
+        elapsed++;
+        const alive = pieces.some(p => p.alpha > 0.01);
+        if (alive) frame = requestAnimationFrame(draw);
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      if (frame) cancelAnimationFrame(frame);
+      draw();
+    }
+
+    function playSuccessSound() {
+      try {
+        const ac = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, startTime, duration, type='sine', vol=0.18, detune=0) {
+          const osc = ac.createOscillator();
+          const gain = ac.createGain();
+          osc.connect(gain); gain.connect(ac.destination);
+          osc.type = type; osc.frequency.value = freq; osc.detune.value = detune;
+          gain.gain.setValueAtTime(0, startTime);
+          gain.gain.linearRampToValueAtTime(vol, startTime + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+          osc.start(startTime); osc.stop(startTime + duration);
+        }
+        const scale = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+        scale.forEach((f, i) => {
+          const t = ac.currentTime + i * 0.1;
+          playTone(f, t, 0.5, 'sine', 0.18);
+          playTone(f * 2, t, 0.3, 'sine', 0.06);
+          playTone(f, t + 0.01, 0.4, 'triangle', 0.08);
+        });
+        const bellTime = ac.currentTime + scale.length * 0.1 + 0.05;
+        playTone(1318.5, bellTime, 1.2, 'sine', 0.22);
+        playTone(1318.5, bellTime, 1.0, 'triangle', 0.1, 7);
+        playTone(2637, bellTime, 0.8, 'sine', 0.07);
+      } catch(e) {}
+    }
+
+    function celebrate(e) {
+      const x = e?.clientX ?? window.innerWidth / 2;
+      const y = e?.clientY ?? window.innerHeight / 2;
+      launchConfetti(x, y);
+      playSuccessSound();
+    }
+
+    function toggleDone(id, e) {
+      const t = tasks.find(t => t.id === id);
+      if (t) {
+        t.done = !t.done;
+        if (t.done) {
+          celebrate(e);
+          if (focusedId === id) {
+            focusedId = null;
+            clearInterval(timerInterval); timerInterval = null;
+            clearInterval(breakInterval); breakInterval = null;
+            document.removeEventListener('visibilitychange', onVisibility);
+            timerRunning = false; timerDone = false; timerPaused = false;
+            breakRunning = false; breakDone = false;
+            timerRemaining = customMinutes * 60;
+            document.title = 'Focus To-Do';
+          }
+        }
+        render();
+      }
+    }
+
+    function toggleFocus(id) {
+      // Exit focus mode
+      focusedId = null;
+      clearInterval(timerInterval); timerInterval = null;
+      clearInterval(breakInterval); breakInterval = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      timerRunning = false; timerDone = false; timerPaused = false;
+      breakRunning = false; breakDone = false;
+      document.title = 'Focus To-Do';
+      render();
+    }
+
+    function focusAndStart(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+
+      // If another task is running (not paused), don't allow switching
+      if (timerRunning && focusedId !== null && focusedId !== id) return;
+
+      // If switching from a paused task to a new one, reset timer for new task
+      const switching = focusedId !== null && focusedId !== id && timerPaused;
+
+      focusedId = id;
+      customMinutes = task.duration || 25;
+
+      if (switching) {
+        // Reset state for new task
+        clearInterval(timerInterval); timerInterval = null;
+        clearInterval(breakInterval); breakInterval = null;
+        document.removeEventListener('visibilitychange', onVisibility);
+        timerDone = false; timerPaused = false;
+        breakRunning = false; breakDone = false;
+        timerRemaining = customMinutes * 60;
+      } else {
+        clearInterval(timerInterval); timerInterval = null;
+        clearInterval(breakInterval); breakInterval = null;
+        document.removeEventListener('visibilitychange', onVisibility);
+        timerRunning = false; timerDone = false; timerPaused = false;
+        breakRunning = false; breakDone = false;
+        timerRemaining = customMinutes * 60;
+      }
+
+      // Start immediately
+      timerStartedAt = Date.now();
+      timerBaseRemaining = timerRemaining;
+      timerRunning = true;
+      render(); updateTabTitle();
+      timerInterval = setInterval(timerTick, 1000);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      if (focusedId === id) {
+        focusedId = null;
+        clearInterval(timerInterval); timerInterval = null;
+        document.removeEventListener('visibilitychange', onVisibility);
+        timerRunning = false; timerDone = false; timerPaused = false;
+      }
+      render(); updateStats();
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function render() {
+      const list = document.getElementById('todoList');
+      if (tasks.length === 0) {
+        list.innerHTML = '<div class="empty">还没有任务 — 在上方添加一个吧！</div>';
+        return;
+      }
+      list.innerHTML = '';
+      tasks.forEach(t => {
+        const isFocused = focusedId === t.id;
+        const isDimmed = focusedId !== null && !isFocused && !timerPaused;
+        const card = document.createElement('div');
+        card.className = 'todo-card' + (t.done ? ' done' : '') + (isFocused ? ' focused' : '') + (isDimmed ? ' dimmed' : '');
+        card.style.background = t.color.bg;
+        card.style.color = t.color.text;
+        card.dataset.id = t.id;
+        card.draggable = !isFocused && !(timerPaused && focusedId !== null);
+
+        const playIcon = `<svg viewBox="0 0 16 16" fill="${t.color.text}"><polygon points="3,1 15,8 3,15"/></svg>`;
+        const stopIcon = `<svg viewBox="0 0 16 16" fill="${t.color.text}"><rect x="2" y="1" width="4" height="14" rx="1.5"/><rect x="10" y="1" width="4" height="14" rx="1.5"/></svg>`;
+
+        if (isFocused) {
+          // ── FOCUSED CARD ──────────────────────────────────────────────────
+          // States: setup (not running, not paused, not done) | running | paused | done | break
+
+          if (timerDone) {
+            // Timer finished state
+            card.innerHTML = `
+              <div style="display:flex; flex-direction:column; width:100%; gap:14px;">
+                <div class="focused-header">
+                  <button class="check-btn${t.done ? ' checked' : ''}" onclick="toggleDone(${t.id}, event)" style="flex-shrink:0;">
+                    <svg class="checkmark" viewBox="0 0 11 11"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5"/></svg>
+                  </button>
+                  <span class="focused-icon">${t.icon}</span>
+                  <span class="focused-title">${escHtml(t.text)}</span>
+                </div>
+                <div class="done-msg">🎉 专注完成！休息一下吧。<br>
+                  <button class="timer-ctrl" style="margin-top:8px;" onclick="resetTimer()">再来一轮</button>
+                </div>
+                <div style="position:absolute; top:14px; right:14px;">
+                  <button class="focus-btn" onclick="toggleFocus(${t.id})" title="退出专注">${stopIcon}</button>
+                </div>
+              </div>`;
+
+          } else if (breakDone) {
+            card.innerHTML = `
+              <div style="display:flex; flex-direction:column; width:100%; gap:14px; align-items:center; justify-content:center; min-height:120px; position:relative;">
+                <span style="font-size:22px;">🎉</span>
+                <span style="font-size:13px; font-weight:600; text-align:center; line-height:1.6;">休息结束！<br>准备好继续了吗？</span>
+                <button class="timer-ctrl" onclick="stopBreak()">继续专注</button>
+                <button class="delete-btn" onclick="toggleFocus(${t.id})" style="position:absolute; top:0; right:0; opacity:0.7;">&#x2715;</button>
+              </div>`;
+
+          } else if (breakRunning) {
+            card.innerHTML = `
+              <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:12px;">
+                <span style="font-size:16px; font-weight:500; opacity:0.9; white-space:nowrap;">☕ 休息中</span>
+                <span style="font-size:36px; font-weight:500; letter-spacing:2px; flex:1; text-align:center;" id="break-display">${Math.floor(breakRemaining/60)}:${String(breakRemaining%60).padStart(2,'0')}</span>
+                <button class="timer-ctrl" onclick="stopBreak()" style="flex-shrink:0;">结束</button>
+              </div>`;
+
+          } else if (timerRunning || timerPaused) {
+            // ── RUNNING / PAUSED state ──
+            // Changes 1, 2, 4: show icon + 40px title + check btn + 3 action buttons only; hide stop & X buttons
+            card.innerHTML = `
+              <div style="display:flex; flex-direction:column; width:100%; gap:6px;">
+                <div class="focused-header">
+                  <button class="check-btn${t.done ? ' checked' : ''}" onclick="toggleDone(${t.id}, event)" style="flex-shrink:0; align-self:center;">
+                    <svg class="checkmark" viewBox="0 0 11 11"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5"/></svg>
+                  </button>
+                  <span class="focused-icon">${t.icon}</span>
+                  <span class="focused-title">${escHtml(t.text)}</span>
+                </div>
+                <div style="display:flex; align-items:stretch; gap:12px;">
+                  <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,0.15); border-radius:12px; padding:10px 16px; flex-shrink:0; min-width:90px;">
+                    <span style="font-size:48px; font-weight:500; letter-spacing:2px; line-height:1;" id="td-display">${minsLeft()}</span>
+                    <span style="font-size:12px; opacity:0.65; margin-top:3px;">${timerPaused ? '已暂停' : '分钟'}</span>
+                  </div>
+                  <div style="flex:1; display:flex; flex-direction:column; gap:8px; justify-content:center;">
+                    <button class="timer-ctrl" onclick="startBreak()" style="width:100%; padding:10px; font-size:13px; text-align:center; background:rgba(0,0,0,0.15);">☕ 休息 5 分钟</button>
+                    <div style="display:flex; gap:8px;">
+                      <button class="timer-ctrl" onclick="addTime(5)" style="flex:1; padding:10px; font-size:13px; background:rgba(0,0,0,0.15);">+ 5 分钟</button>
+                      ${timerPaused
+                        ? `<button class="timer-ctrl" onclick="resumeTimer()" style="flex:1; padding:10px; font-size:13px; background:rgba(0,0,0,0.15);">▶ 继续</button>`
+                        : `<button class="timer-ctrl" onclick="pauseTimer()" style="flex:1; padding:10px; font-size:13px; background:rgba(0,0,0,0.15);">暂停</button>`}
+                    </div>
+                  </div>
+                </div>
+              </div>`;
+
+          }
+
+        } else {
+          // ── NORMAL CARD ──────────────────────────────────────────────────
+          const durationOptions = DURATIONS.map(d => `<option value="${d}"${t.duration === d ? ' selected' : ''}>${d}分钟</option>`).join('');
+          card.innerHTML = `
+            <button class="check-btn${t.done ? ' checked' : ''}" onclick="toggleDone(${t.id}, event)">
+              <svg class="checkmark" viewBox="0 0 11 11"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5"/></svg>
+            </button>
+            <button class="icon-btn" onclick="openIconPicker(${t.id})">${t.icon}</button>
+            <span class="todo-text">${escHtml(t.text)}</span>
+            <select class="duration-select" onchange="changeDuration(${t.id}, parseInt(this.value))">${durationOptions}</select>
+            <button class="focus-btn" onclick="focusAndStart(${t.id})" title="专注此任务">${playIcon}</button>
+            <button class="delete-btn" onclick="deleteTask(${t.id})" style="margin-left:20px;">&#x2715;</button>
+          `;
+        }
+
+        card.addEventListener('dragstart', e => { dragSrcId = t.id; setTimeout(() => card.classList.add('dragging'), 0); e.dataTransfer.effectAllowed = 'move'; });
+        card.addEventListener('dragend', () => document.querySelectorAll('.todo-card').forEach(c => c.classList.remove('dragging','drag-over')));
+        card.addEventListener('dragover', e => { e.preventDefault(); document.querySelectorAll('.todo-card').forEach(c => c.classList.remove('drag-over')); card.classList.add('drag-over'); });
+        card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+        card.addEventListener('drop', e => {
+          e.preventDefault(); card.classList.remove('drag-over');
+          if (dragSrcId === t.id) return;
+          const fi = tasks.findIndex(x => x.id === dragSrcId), ti = tasks.findIndex(x => x.id === t.id);
+          if (fi < 0 || ti < 0) return;
+          const [m] = tasks.splice(fi, 1); tasks.splice(ti, 0, m); render();
+        });
+
+        list.appendChild(card);
+      });
+    }
+
+    document.getElementById('taskInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+    render(); updateStats();
+  </script>
+</body>
+</html>
